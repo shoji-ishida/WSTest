@@ -22,30 +22,23 @@ import static org.asynchttpclient.Dsl.asyncHttpClient;
 public class HttpMultipleRequests {
     private static final String ENDPOINT = "http://yanase-W331AU.local:8080/SpringTest_war/spring";
 
-    private static final int NUM_OF_REQUESTS = 10;
+    private static final int NUM_OF_REQUESTS = 100;
     private static final Logger log = Logger.getLogger(HttpMultipleRequests.class.getName());
 
     public static void main(String[] args) throws IOException {
 
-        AsyncHttpClient client = asyncHttpClient();
-        List<CompletableFuture<Response>> futures = Stream.generate(() -> client.prepareGet(ENDPOINT).execute().toCompletableFuture()).parallel().limit(NUM_OF_REQUESTS).collect(Collectors.toList());
+        try(AsyncHttpClient client = asyncHttpClient()) {
+            // Generates NUM_OF_REQUESTS of CompletableFuture from AsyncHttpClient
+            List<CompletableFuture<Response>> futures = Stream.generate(() -> client.prepareGet(ENDPOINT).execute().toCompletableFuture()).parallel().limit(NUM_OF_REQUESTS).collect(Collectors.toList());
 
-        CompletableFuture<Void> allOfFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()]));
+            // wait on all of Futures to finish
+            CompletableFuture<Void> allOfFutures = CompletableFuture.allOf(futures.toArray(new CompletableFuture[futures.size()]));
+            allOfFutures.join();
 
-        futures.parallelStream().forEach(future -> {
-            future.thenApplyAsync(Response::getStatusCode).thenAcceptAsync(HttpMultipleRequests::dump);
-        });
-
-        try {
-            allOfFutures.get();
-        } catch (ExecutionException | InterruptedException e) {
-            log.log(Level.SEVERE, e.getMessage());
-            //e.printStackTrace();
+            // Process Response from each Future
+            futures.parallelStream().forEach(future -> {
+                future.thenApplyAsync(Response::getStatusText).thenAcceptAsync(System.out::println);
+            });
         }
-    }
-
-
-    public static void dump(Integer code) {
-        log.log(Level.INFO, code.toString());
     }
 }
