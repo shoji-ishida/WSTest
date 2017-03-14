@@ -10,6 +10,7 @@ import org.asynchttpclient.DefaultAsyncHttpClientConfig;
 import org.asynchttpclient.ws.WebSocket;
 import org.asynchttpclient.ws.WebSocketTextListener;
 import org.asynchttpclient.ws.WebSocketUpgradeHandler;
+import org.slf4j.impl.SimpleLogger;
 
 import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
