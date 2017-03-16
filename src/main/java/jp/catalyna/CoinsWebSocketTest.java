@@ -11,7 +11,9 @@ import org.asynchttpclient.ws.WebSocketUpgradeHandler;
 import org.slf4j.impl.SimpleLogger;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,9 +42,11 @@ public class CoinsWebSocketTest {
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "org.asynchttpclient", "trace");
         Options options = new Options();
         options.addOption(Option.builder("c").hasArg().required(false).argName("concurrency").desc("Number of multiple sessions to establish at a time").build());
+        options.addOption(Option.builder("r").hasArg(false).required(false).argName("randamUuid").desc("Generate random UUID for URL parameter").build());
         CommandLineParser parser = new DefaultParser();
 
         int n = NUM_OF_SESSIONS;
+        boolean isRandomUuid = false;
 
         AsyncHttpClientConfig config = new DefaultAsyncHttpClientConfig.Builder().setConnectionTtl(-1).setReadTimeout(-1).setRequestTimeout(-1).setConnectTimeout(-1).setKeepAlive(true).build();
 
@@ -51,11 +55,26 @@ public class CoinsWebSocketTest {
             if (cmd.hasOption("c")) {
                 n = Integer.parseInt(cmd.getOptionValue("c"));
             }
+            if (cmd.hasOption("r")) {
+                isRandomUuid = true;
+            }
             String[] leftArgs = cmd.getArgs();
             String endpoint = leftArgs[0];
             int sessions = n;
 
+            List<String> endpoints = null;
+            if (isRandomUuid) {
+                String ref = leftArgs[1];
+                String pre = endpoint;
+                endpoints = Stream.generate(() -> {
+                    return pre + UUID.randomUUID().toString() + ref;
+                }).limit(sessions).collect(Collectors.toList());
+            }
+
             for (int i = 0; i< sessions; i++) { // looping with Stream API causes abnormal behavior of AsyncHttpClient thus using  for loop
+                if (isRandomUuid) {
+                    endpoint = endpoints.get(i);
+                }
                 final CompletableFuture<WebSocket> future = asyncHttpClient.prepareGet(endpoint)
                         .execute(new WebSocketUpgradeHandler.Builder().addWebSocketListener(
                                 new WebSocketTextListener() {
