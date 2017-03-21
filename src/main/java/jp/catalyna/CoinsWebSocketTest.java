@@ -4,6 +4,7 @@ package jp.catalyna;
  * Created by ishida on 2017/03/07.
  */
 import org.apache.commons.cli.*;
+import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.asynchttpclient.*;
 import org.asynchttpclient.ws.WebSocket;
 import org.asynchttpclient.ws.WebSocketTextListener;
@@ -32,9 +33,15 @@ public class CoinsWebSocketTest {
     private static final Logger log = Logger.getLogger(CoinsWebSocketTest.class.getName());
 
     private static final AtomicInteger session_count = new AtomicInteger(0);
+    private static final AtomicInteger concurrent_count = new AtomicInteger(0);
+    private static final AtomicInteger close_count = new AtomicInteger(0);
+
     private static final AtomicInteger push_count = new AtomicInteger(0);
 
     private static final Object lock = new Object();
+    private static final Object concurrencyLock = new Object();
+
+    private static long startTime = 0;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
         // enable trace log for netty and asynchhttpclient
@@ -42,10 +49,15 @@ public class CoinsWebSocketTest {
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "org.asynchttpclient", "trace");
         Options options = new Options();
         options.addOption(Option.builder("c").hasArg().required(false).argName("concurrency").desc("Number of multiple sessions to establish at a time").build());
-        options.addOption(Option.builder("r").hasArg(false).required(false).argName("randamUuid").desc("Generate random UUID for URL parameter").build());
+        options.addOption(Option.builder("n").hasArg().required(false).argName("requests").desc("Number of request to perform").build());
+
+        options.addOption(Option.builder("r").hasArg(false).required(false).desc("Generate random UUID for URL parameter").build());
+        options.addOption(Option.builder("closeOnOpen").hasArg(false).required(false).desc("Close websocket connection when onOpen is called").build());
+        options.addOption(Option.builder("click").hasArg(false).required(false).desc("Send click message on onMassage").build());
         CommandLineParser parser = new DefaultParser();
 
-        int n = NUM_OF_SESSIONS;
+        int c = NUM_OF_SESSIONS;
+        int n = c;
         boolean isRandomUuid = false;
 
         AsyncHttpClientConfig config = new DefaultAsyncHttpClientConfig.Builder().setConnectionTtl(-1).setReadTimeout(-1).setRequestTimeout(-1).setConnectTimeout(-1).setKeepAlive(true).build();
@@ -53,14 +65,24 @@ public class CoinsWebSocketTest {
         try (AsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient(config)) {
             CommandLine cmd = parser.parse( options, args);
             if (cmd.hasOption("c")) {
-                n = Integer.parseInt(cmd.getOptionValue("c"));
+                c = Integer.parseInt(cmd.getOptionValue("c"));
+            }
+            if (cmd.hasOption("n")) {
+                n = Integer.parseInt(cmd.getOptionValue("n"));
+                if (n < c) {
+                    System.err.println("c can not be bigger than n");
+                    System.exit(-1);
+                }
             }
             if (cmd.hasOption("r")) {
                 isRandomUuid = true;
             }
+            final boolean isCloseOnOpen = cmd.hasOption("closeOnOpen");
+
             String[] leftArgs = cmd.getArgs();
             String endpoint = leftArgs[0];
-            int sessions = n;
+            int concurrent = c;
+            int requests = n;
 
             List<String> endpoints = null;
             if (isRandomUuid) {
@@ -68,13 +90,23 @@ public class CoinsWebSocketTest {
                 String pre = endpoint;
                 endpoints = Stream.generate(() -> {
                     return pre + UUID.randomUUID().toString() + ref;
-                }).limit(sessions).collect(Collectors.toList());
+                }).limit(requests).collect(Collectors.toList());
             }
 
-            for (int i = 0; i< sessions; i++) { // looping with Stream API causes abnormal behavior of AsyncHttpClient thus using  for loop
+            startTime = System.currentTimeMillis();
+            for (int i = 0, j = 0; i < requests; i++, j++) { // looping with Stream API causes abnormal behavior of AsyncHttpClient thus using  for loop
                 if (isRandomUuid) {
                     endpoint = endpoints.get(i);
                 }
+                if (j == concurrent) {
+                    j = 0;
+                    //log.log(Level.INFO, "wait on concurrencyLock");
+                    synchronized (concurrencyLock) {
+                        concurrencyLock.wait();
+                    }
+                    startTime = System.currentTimeMillis();
+                }
+
                 final CompletableFuture<WebSocket> future = asyncHttpClient.prepareGet(endpoint)
                         .execute(new WebSocketUpgradeHandler.Builder().addWebSocketListener(
                                 new WebSocketTextListener() {
@@ -84,17 +116,34 @@ public class CoinsWebSocketTest {
                                     public void onOpen(WebSocket webSocket) {
                                         //log.log(Level.INFO, "onOpen");
                                         ws = webSocket;
-                                        int count = session_count.incrementAndGet();
-                                        if (count == sessions) {
-                                            log.log(Level.INFO, sessions + " sessions(s) established.");
+                                        int sessionCount = session_count.incrementAndGet();
+                                        int concurrentCount = concurrent_count.incrementAndGet();
+                                        if (isCloseOnOpen) {
+                                            try {
+                                                webSocket.close();
+                                            } catch (IOException e) {
+                                                e.printStackTrace();
+                                            }
+                                        }
+                                        if (concurrentCount == concurrent) {
+                                            concurrent_count.set(0);
+                                            long endTime = System.currentTimeMillis();
+                                            String duration = DurationFormatUtils.formatPeriod(startTime, endTime, "mm:ss.SSS");
+                                            log.log(Level.INFO, "Completed " + sessionCount + " requests (" + duration +")");
+                                            synchronized (concurrencyLock) {
+                                                concurrencyLock.notify();
+                                            }
+                                        }
+                                        if (sessionCount == requests) {
+                                            log.log(Level.INFO, requests + " sessions(s) established. Ready to push");
                                         }
                                     }
 
                                     @Override
                                     public void onClose(WebSocket webSocket) {
                                         //log.log(Level.INFO, "onClose");
-                                        int count = session_count.decrementAndGet();
-                                        if (count == 0) {
+                                        int count = close_count.incrementAndGet();
+                                        if (count == requests) {
                                             log.log(Level.INFO, "all session(s) closed.");
                                             synchronized (lock) {
                                                 lock.notify();
@@ -109,7 +158,7 @@ public class CoinsWebSocketTest {
 
                                     @Override
                                     public void onMessage(String message) {
-                                        log.log(Level.INFO, message);
+                                        //log.log(Level.INFO, message);
                                         int count = push_count.incrementAndGet();
                                         if (count == session_count.get()) {
                                             log.log(Level.INFO, count + " push(es) received.");
@@ -123,7 +172,7 @@ public class CoinsWebSocketTest {
                                 }).build()).toCompletableFuture();
             }
             synchronized(lock) {
-                log.log(Level.INFO, "wait");
+                //log.log(Level.INFO, "wait on lock");
                 lock.wait();
             }
         } catch (ArrayIndexOutOfBoundsException e) {
