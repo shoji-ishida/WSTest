@@ -21,6 +21,7 @@
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/io/netty/netty-buffer/4.0.44.Final/netty-buffer-4.0.44.Final.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/io/netty/netty-handler/4.0.44.Final/netty-handler-4.0.44.Final.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/commons-cli/commons-cli/1.4/commons-cli-1.4.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/fasterxml/jackson/core/jackson-core/2.8.7/jackson-core-2.8.7.jar" path-in-jar="/" />
     </root>
   </artifact>
 </component>
