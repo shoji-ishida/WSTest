@@ -43,7 +43,13 @@ public class CoinsWebSocketTest {
 
     private static final String TIME_FORMAT = "mm:ss.SSS";
 
-
+    private static final String OPTION_N = "n";
+    private static final String OPTION_C = "c";
+    private static final String OPTION_R = "r";
+    private static final String OPTION_CLOSE_ON_OPEN = "closeOnOpen";
+    private static final String OPTION_CLOSE_ON_MESSAGE = "closeOnMessage";
+    private static final String OPTION_SEND_DISPLAY = "sendDisplay";
+    private static final String OPTION_SEND_CLICK = "sendClick";
 
     private static final int NUM_OF_SESSIONS = 1000;
     private static final Logger log = Logger.getLogger(CoinsWebSocketTest.class.getName());
@@ -64,13 +70,13 @@ public class CoinsWebSocketTest {
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "io.netty", "trace");
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "org.asynchttpclient", "trace");
         Options options = new Options();
-        options.addOption(Option.builder("c").hasArg().required(false).argName("concurrency").desc("Number of multiple sessions to establish at a time").build());
-        options.addOption(Option.builder("n").hasArg().required(false).argName("requests").desc("Number of request to perform").build());
-
-        options.addOption(Option.builder("r").hasArg(false).required(false).desc("Generate random UUID for URL parameter").build());
-        options.addOption(Option.builder("closeOnOpen").hasArg(false).required(false).desc("Close websocket connection when onOpen is called").build());
-        options.addOption(Option.builder("sendDisplay").hasArg(false).required(false).desc("Send display message on onMassage").build());
-        options.addOption(Option.builder("sendClick").hasArg(false).required(false).desc("Send click message on onMassage").build());
+        options.addOption(Option.builder(OPTION_C).hasArg().required(false).argName("concurrency").desc("Number of multiple sessions to establish at a time").build());
+        options.addOption(Option.builder(OPTION_N).hasArg().required(false).argName("requests").desc("Number of request to perform").build());
+        options.addOption(Option.builder(OPTION_R).hasArg(false).required(false).desc("Generate random UUID for URL parameter").build());
+        options.addOption(Option.builder(OPTION_CLOSE_ON_OPEN).hasArg(false).required(false).desc("Close websocket connection when onOpen is called").build());
+        options.addOption(Option.builder(OPTION_CLOSE_ON_MESSAGE).hasArg(false).required(false).desc("Close websocket connection when onMessage is called").build());
+        options.addOption(Option.builder(OPTION_SEND_DISPLAY).hasArg(false).required(false).desc("Send display message on onMassage").build());
+        options.addOption(Option.builder(OPTION_SEND_CLICK).hasArg(false).required(false).desc("Send click message on onMassage").build());
         CommandLineParser parser = new DefaultParser();
 
         int c = NUM_OF_SESSIONS;
@@ -81,22 +87,23 @@ public class CoinsWebSocketTest {
 
         try (AsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient(config)) {
             CommandLine cmd = parser.parse( options, args);
-            if (cmd.hasOption("c")) {
-                c = Integer.parseInt(cmd.getOptionValue("c"));
+            if (cmd.hasOption(OPTION_C)) {
+                c = Integer.parseInt(cmd.getOptionValue(OPTION_C));
             }
-            if (cmd.hasOption("n")) {
-                n = Integer.parseInt(cmd.getOptionValue("n"));
+            if (cmd.hasOption(OPTION_N)) {
+                n = Integer.parseInt(cmd.getOptionValue(OPTION_N));
                 if (n < c) {
                     System.err.println("c can not be bigger than n");
                     System.exit(-1);
                 }
             }
-            if (cmd.hasOption("r")) {
+            if (cmd.hasOption(OPTION_R)) {
                 isRandomUuid = true;
             }
-            final boolean isCloseOnOpen = cmd.hasOption("closeOnOpen");
-            final boolean isSendDisplay = cmd.hasOption("sendDisplay");
-            final boolean isSendClick = cmd.hasOption("sendClick");
+            final boolean isCloseOnOpen = cmd.hasOption(OPTION_CLOSE_ON_OPEN);
+            final boolean isCloseOnMessage = cmd.hasOption(OPTION_CLOSE_ON_MESSAGE);
+            final boolean isSendDisplay = cmd.hasOption(OPTION_SEND_DISPLAY);
+            final boolean isSendClick = cmd.hasOption(OPTION_SEND_CLICK);
 
             String[] leftArgs = cmd.getArgs();
             String endpoint = leftArgs[0];
