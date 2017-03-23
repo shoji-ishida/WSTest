@@ -207,8 +207,13 @@ public class CoinsWebSocketTest {
                                             long endTime = System.currentTimeMillis();
                                             String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
                                             log.log(Level.INFO, count + " push(es) received. (" + duration + ")");
-                                            synchronized (lock) {
-                                                lock.notify();
+                                            push_count.set(0);
+                                            if (isCloseOnMessage) {
+                                                try {
+                                                    ws.close();
+                                                } catch (IOException e) {
+                                                    e.printStackTrace();
+                                                }
                                             }
                                         }
                                     }
