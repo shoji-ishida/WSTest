@@ -34,7 +34,7 @@ public class Counter implements CounterMBean {
 
     @Override
     public void putDisplayCount(int i) {
-
+        display = i;
     }
 
     @Override
@@ -44,7 +44,7 @@ public class Counter implements CounterMBean {
 
     @Override
     public void putClickCount(int i) {
-
+        click = i;
     }
 
     @Override
