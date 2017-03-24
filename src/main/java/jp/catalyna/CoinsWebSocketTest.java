@@ -7,6 +7,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import jp.catalyna.bean.Counter;
 import org.apache.commons.cli.*;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.asynchttpclient.*;
@@ -15,11 +16,11 @@ import org.asynchttpclient.ws.WebSocketTextListener;
 import org.asynchttpclient.ws.WebSocketUpgradeHandler;
 import org.slf4j.impl.SimpleLogger;
 
-import java.io.BufferedOutputStream;
+import javax.management.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.lang.management.ManagementFactory;
+
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -59,13 +60,16 @@ public class CoinsWebSocketTest {
     private static final AtomicInteger close_count = new AtomicInteger(0);
 
     private static final AtomicInteger push_count = new AtomicInteger(0);
+    private static final AtomicInteger display_count = new AtomicInteger(0);
+    private static final AtomicInteger click_count = new AtomicInteger(0);
+
 
     private static final Object lock = new Object();
     private static final Object concurrencyLock = new Object();
 
     private static long startTime = 0;
 
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
+    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, MalformedObjectNameException, NotCompliantMBeanException, InstanceAlreadyExistsException, MBeanRegistrationException {
         // enable trace log for netty and asynchhttpclient
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "io.netty", "trace");
         //System.setProperty(SimpleLogger.LOG_KEY_PREFIX + "org.asynchttpclient", "trace");
@@ -82,6 +86,11 @@ public class CoinsWebSocketTest {
         int c = NUM_OF_SESSIONS;
         int n = c;
         boolean isRandomUuid = false;
+
+        MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
+        ObjectName mbeanName = new ObjectName("jp.catalyna:type=WebSocket");
+        Counter counter = new Counter();
+        mbs.registerMBean(counter, mbeanName);
 
         AsyncHttpClientConfig config = new DefaultAsyncHttpClientConfig.Builder().setConnectionTtl(-1).setReadTimeout(-1).setRequestTimeout(-1).setConnectTimeout(-1).setKeepAlive(true).build();
 
@@ -143,6 +152,7 @@ public class CoinsWebSocketTest {
                                         //log.log(Level.INFO, "onOpen");
                                         ws = webSocket;
                                         int sessionCount = session_count.incrementAndGet();
+                                        counter.putActiveSession(sessionCount);
                                         int concurrentCount = concurrent_count.incrementAndGet();
                                         if (isCloseOnOpen) {
                                             try {
@@ -191,15 +201,20 @@ public class CoinsWebSocketTest {
                                             if (isSendDisplay) {
                                                 String jsonString = createJson(MESSAGE_TYPE_DISPLAY, messageId);
                                                 sendMessage(ws, jsonString);
+                                                int count = display_count.incrementAndGet();
+                                                counter.putDisplayCount(count);
                                             }
                                             // click
                                             if (isSendClick) {
                                                 String jsonString = createJson(MESSAGE_TYPE_CLICK, messageId);
                                                 sendMessage(ws, jsonString);
+                                                int count = click_count.incrementAndGet();
+                                                counter.putClickCount(count);
                                             }
                                         }
                                         //log.log(Level.INFO, message);
                                         int count = push_count.incrementAndGet();
+                                        counter.putPushCount(count);
                                         if (count == 0) {
                                             startTime = System.currentTimeMillis();
                                         }
