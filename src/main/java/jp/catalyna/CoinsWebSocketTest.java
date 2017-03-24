@@ -11,6 +11,7 @@ import jp.catalyna.bean.Counter;
 import org.apache.commons.cli.*;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.asynchttpclient.*;
+import org.asynchttpclient.util.HttpConstants;
 import org.asynchttpclient.ws.WebSocket;
 import org.asynchttpclient.ws.WebSocketTextListener;
 import org.asynchttpclient.ws.WebSocketUpgradeHandler;
@@ -250,7 +251,7 @@ public class CoinsWebSocketTest {
 
     private static void requestPush(String url, String token) {
         try (AsyncHttpClient asyncHttpClient = asyncHttpClient()) {
-            RequestBuilder builder = new RequestBuilder("GET");
+            RequestBuilder builder = new RequestBuilder(HttpConstants.Methods.GET);
             Request request = builder.setUrl(url)
                     .addHeader("X-Account-Token", token)
                     .setBody("JSON body here")
