@@ -20,8 +20,12 @@ import org.slf4j.impl.SimpleLogger;
 import javax.management.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.management.ManagementFactory;
 
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -48,8 +52,11 @@ public class CoinsWebSocketTest {
     private static final String OPTION_N = "n";
     private static final String OPTION_C = "c";
     private static final String OPTION_R = "r";
+    private static final String OPTION_L = "l";
+
     private static final String OPTION_CLOSE_ON_OPEN = "closeOnOpen";
     private static final String OPTION_CLOSE_ON_MESSAGE = "closeOnMessage";
+    private static final String OPTION_PUSH_ON_OPEN = "pushOnOpen";
     private static final String OPTION_SEND_DISPLAY = "sendDisplay";
     private static final String OPTION_SEND_CLICK = "sendClick";
 
@@ -78,8 +85,11 @@ public class CoinsWebSocketTest {
         options.addOption(Option.builder(OPTION_C).hasArg().required(false).argName("concurrency").desc("Number of multiple sessions to establish at a time").build());
         options.addOption(Option.builder(OPTION_N).hasArg().required(false).argName("requests").desc("Number of request to perform").build());
         options.addOption(Option.builder(OPTION_R).hasArg(false).required(false).desc("Generate random UUID for URL parameter").build());
+        options.addOption(Option.builder(OPTION_L).hasArg().optionalArg(true).required(false).desc("Repeat establishing sessions after all sessions are closed").build());
+
         options.addOption(Option.builder(OPTION_CLOSE_ON_OPEN).hasArg(false).required(false).desc("Close websocket connection when onOpen is called").build());
         options.addOption(Option.builder(OPTION_CLOSE_ON_MESSAGE).hasArg(false).required(false).desc("Close websocket connection when onMessage is called").build());
+        options.addOption(Option.builder(OPTION_PUSH_ON_OPEN).hasArgs().numberOfArgs(3).required(false).desc("Request push when onOpen").build());
         options.addOption(Option.builder(OPTION_SEND_DISPLAY).hasArg(false).required(false).desc("Send display message on onMassage").build());
         options.addOption(Option.builder(OPTION_SEND_CLICK).hasArg(false).required(false).desc("Send click message on onMassage").build());
         CommandLineParser parser = new DefaultParser();
@@ -114,6 +124,19 @@ public class CoinsWebSocketTest {
             final boolean isCloseOnMessage = cmd.hasOption(OPTION_CLOSE_ON_MESSAGE);
             final boolean isSendDisplay = cmd.hasOption(OPTION_SEND_DISPLAY);
             final boolean isSendClick = cmd.hasOption(OPTION_SEND_CLICK);
+            final boolean isPushOnOpen = cmd.hasOption(OPTION_PUSH_ON_OPEN);
+            final boolean isLoop = cmd.hasOption(OPTION_L);
+            String lOption = cmd.getOptionValue(OPTION_L);
+            final int loopCount = (lOption != null) ? Integer.parseInt(lOption) : -1;
+
+            String pushValues[] = isPushOnOpen ? cmd.getOptionValues(OPTION_PUSH_ON_OPEN) : null;
+            if (isPushOnOpen) {
+                Path path = FileSystems.getDefault().getPath(pushValues[2]);
+                if (Files.notExists(path)) {
+                    System.err.println("File does not exist: " + path.toString());
+                    System.exit(-1);
+                }
+            }
 
             String[] leftArgs = cmd.getArgs();
             String endpoint = leftArgs[0];
@@ -129,132 +152,156 @@ public class CoinsWebSocketTest {
                 }).limit(requests).collect(Collectors.toList());
             }
 
-            startTime = System.currentTimeMillis();
-            for (int i = 0, j = 0; i < requests; i++, j++) { // looping with Stream API causes abnormal behavior of AsyncHttpClient thus using  for loop
-                if (isRandomUuid) {
-                    endpoint = endpoints.get(i);
-                }
-                if (j == concurrent) {
-                    j = 0;
-                    //log.log(Level.INFO, "wait on concurrencyLock");
-                    synchronized (concurrencyLock) {
-                        concurrencyLock.wait();
+            int count = 0;
+            while (isLoop) {
+                startTime = System.currentTimeMillis();
+                for (int i = 0, j = 0; i < requests; i++, j++) { // looping with Stream API causes abnormal behavior of AsyncHttpClient thus using  for loop
+                    if (isRandomUuid) {
+                        endpoint = endpoints.get(i);
                     }
-                    startTime = System.currentTimeMillis();
-                }
+                    if (j == concurrent) {
+                        j = 0;
+                        //log.log(Level.INFO, "wait on concurrencyLock");
+                        synchronized (concurrencyLock) {
+                            concurrencyLock.wait();
+                        }
+                        startTime = System.currentTimeMillis();
+                    }
 
-                final CompletableFuture<WebSocket> future = asyncHttpClient.prepareGet(endpoint)
-                        .execute(new WebSocketUpgradeHandler.Builder().addWebSocketListener(
-                                new WebSocketTextListener() {
-                                    WebSocket ws;
+                    final CompletableFuture<WebSocket> future = asyncHttpClient.prepareGet(endpoint)
+                            .execute(new WebSocketUpgradeHandler.Builder().addWebSocketListener(
+                                    new WebSocketTextListener() {
+                                        WebSocket ws;
 
-                                    @Override
-                                    public void onOpen(WebSocket webSocket) {
-                                        //log.log(Level.INFO, "onOpen");
-                                        ws = webSocket;
-                                        int sessionCount = session_count.incrementAndGet();
-                                        counter.putActiveSession(sessionCount);
-                                        int concurrentCount = concurrent_count.incrementAndGet();
-                                        if (isCloseOnOpen) {
-                                            try {
-                                                webSocket.close();
-                                            } catch (IOException e) {
-                                                e.printStackTrace();
-                                            }
-                                        }
-                                        if (concurrentCount == concurrent) {
-                                            concurrent_count.set(0);
-                                            long endTime = System.currentTimeMillis();
-                                            String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
-                                            log.log(Level.INFO, "Completed " + sessionCount + " requests. (" + duration +")");
-                                            synchronized (concurrencyLock) {
-                                                concurrencyLock.notify();
-                                            }
-                                        }
-                                        if (sessionCount == requests) {
-                                            log.log(Level.INFO, requests + " sessions(s) established. Ready to push");
-                                        }
-                                    }
-
-                                    @Override
-                                    public void onClose(WebSocket webSocket) {
-                                        //log.log(Level.INFO, "onClose");
-                                        int count = close_count.incrementAndGet();
-                                        if (count == requests) {
-                                            log.log(Level.INFO, "all session(s) closed.");
-                                            synchronized (lock) {
-                                                lock.notify();
-                                            }
-                                        }
-                                    }
-
-                                    @Override
-                                    public void onError(Throwable t) {
-                                        log.log(Level.WARNING, "onError: " + t.getMessage());
-                                    }
-
-                                    @Override
-                                    public void onMessage(String message) {
-                                        // respond with display/click message
-                                        if (isSendClick && isSendDisplay) {
-                                            String messageId = parseMessageId(message);
-                                            // display
-                                            if (isSendDisplay) {
-                                                String jsonString = createJson(MESSAGE_TYPE_DISPLAY, messageId);
-                                                sendMessage(ws, jsonString);
-                                                int count = display_count.incrementAndGet();
-                                                counter.putDisplayCount(count);
-                                            }
-                                            // click
-                                            if (isSendClick) {
-                                                String jsonString = createJson(MESSAGE_TYPE_CLICK, messageId);
-                                                sendMessage(ws, jsonString);
-                                                int count = click_count.incrementAndGet();
-                                                counter.putClickCount(count);
-                                            }
-                                        }
-                                        //log.log(Level.INFO, message);
-                                        int count = push_count.incrementAndGet();
-                                        counter.putPushCount(count);
-                                        if (count == 0) {
-                                            startTime = System.currentTimeMillis();
-                                        }
-                                        if (count == session_count.get()) {
-                                            long endTime = System.currentTimeMillis();
-                                            String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
-                                            log.log(Level.INFO, count + " push(es) received. (" + duration + ")");
-                                            push_count.set(0);
-                                            if (isCloseOnMessage) {
+                                        @Override
+                                        public void onOpen(WebSocket webSocket) {
+                                            //log.log(Level.INFO, "onOpen");
+                                            ws = webSocket;
+                                            int sessionCount = session_count.incrementAndGet();
+                                            counter.putActiveSession(sessionCount);
+                                            int concurrentCount = concurrent_count.incrementAndGet();
+                                            if (isCloseOnOpen) {
                                                 try {
-                                                    ws.close();
+                                                    webSocket.close();
                                                 } catch (IOException e) {
                                                     e.printStackTrace();
                                                 }
                                             }
+                                            if (concurrentCount == concurrent) {
+                                                concurrent_count.set(0);
+                                                long endTime = System.currentTimeMillis();
+                                                String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
+                                                log.log(Level.INFO, "Completed " + sessionCount + " requests. (" + duration + ")");
+                                                synchronized (concurrencyLock) {
+                                                    concurrencyLock.notify();
+                                                }
+                                            }
+                                            if (sessionCount == requests) {
+                                                log.log(Level.INFO, requests + " sessions(s) established. Ready to push");
+                                                if (isPushOnOpen) {
+                                                    log.log(Level.INFO, "Requesting push");
+                                                    log.log(Level.INFO, "url=" + pushValues[0] + ", token=" + pushValues[1] + ", json=" + pushValues[2]);
+                                                    Path path = FileSystems.getDefault().getPath(pushValues[2]);
+                                                    try {
+                                                        InputStream is = Files.newInputStream(path);
+                                                        requestPush(pushValues[0], pushValues[1], is);
+                                                    } catch (IOException e) {
+                                                        e.printStackTrace();
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
+
+                                        @Override
+                                        public void onClose(WebSocket webSocket) {
+                                            //log.log(Level.INFO, "onClose");
+                                            int count = close_count.incrementAndGet();
+                                            if (count == requests) {
+                                                log.log(Level.INFO, "all session(s) closed.");
+                                                synchronized (lock) {
+                                                    lock.notify();
+                                                }
+                                            }
+                                        }
+
+                                        @Override
+                                        public void onError(Throwable t) {
+                                            log.log(Level.WARNING, "onError: " + t.getMessage());
+                                        }
+
+                                        @Override
+                                        public void onMessage(String message) {
+                                            // respond with display/click message
+                                            if (isSendClick && isSendDisplay) {
+                                                String messageId = parseMessageId(message);
+                                                // display
+                                                if (isSendDisplay) {
+                                                    String jsonString = createJson(MESSAGE_TYPE_DISPLAY, messageId);
+                                                    sendMessage(ws, jsonString);
+                                                    int count = display_count.incrementAndGet();
+                                                    counter.putDisplayCount(count);
+                                                }
+                                                // click
+                                                if (isSendClick) {
+                                                    String jsonString = createJson(MESSAGE_TYPE_CLICK, messageId);
+                                                    sendMessage(ws, jsonString);
+                                                    int count = click_count.incrementAndGet();
+                                                    counter.putClickCount(count);
+                                                }
+                                            }
+                                            //log.log(Level.INFO, message);
+                                            int count = push_count.incrementAndGet();
+                                            counter.putPushCount(count);
+                                            if (count == 0) {
+                                                startTime = System.currentTimeMillis();
+                                            }
+                                            if (count == session_count.get()) {
+                                                long endTime = System.currentTimeMillis();
+                                                String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
+                                                log.log(Level.INFO, count + " push(es) received. (" + duration + ")");
+                                                push_count.set(0);
+                                                if (isCloseOnMessage) {
+                                                    try {
+                                                        ws.close();
+                                                    } catch (IOException e) {
+                                                        e.printStackTrace();
+                                                    }
+                                                }
+                                            }
+                                        }
 
 
-                                }).build()).toCompletableFuture();
-            }
+                                    }).build()).toCompletableFuture();
+                }
 
-            synchronized(lock) {
-                //log.log(Level.INFO, "wait on lock");
-                lock.wait();
+                synchronized (lock) {
+                    //log.log(Level.INFO, "wait on lock");
+                    lock.wait();
+                }
+                if (loopCount != -1) {
+                    count++;
+                    //log.log(Level.INFO, "count = " + count);
+                    if (count == loopCount) {
+                        break;
+                    }
+                }
+                session_count.set(0);
+                close_count.set(0);
             }
         } catch (ArrayIndexOutOfBoundsException e) {
             System.err.println("wrong number of arguments");
         } catch (ParseException e) {
-            e.printStackTrace();
+            System.err.println(e.getLocalizedMessage());
+            //e.printStackTrace();
         }
     }
 
-    private static void requestPush(String url, String token) {
+    private static void requestPush(String url, String token, InputStream is) {
         try (AsyncHttpClient asyncHttpClient = asyncHttpClient()) {
-            RequestBuilder builder = new RequestBuilder(HttpConstants.Methods.GET);
+            RequestBuilder builder = new RequestBuilder(HttpConstants.Methods.PUT);
             Request request = builder.setUrl(url)
                     .addHeader("X-Account-Token", token)
-                    .setBody("JSON body here")
+                    .setBody(is)
                     .build();
             asyncHttpClient
                     .executeRequest(request)
