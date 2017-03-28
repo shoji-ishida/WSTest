@@ -125,10 +125,13 @@ public class CoinsWebSocketTest {
             final boolean isSendDisplay = cmd.hasOption(OPTION_SEND_DISPLAY);
             final boolean isSendClick = cmd.hasOption(OPTION_SEND_CLICK);
             final boolean isPushOnOpen = cmd.hasOption(OPTION_PUSH_ON_OPEN);
-            final boolean isLoop = cmd.hasOption(OPTION_L);
+            boolean isLoop = cmd.hasOption(OPTION_L);
             String lOption = cmd.getOptionValue(OPTION_L);
-            final int loopCount = (lOption != null) ? Integer.parseInt(lOption) : -1;
-
+            int loopCount = (lOption != null) ? Integer.parseInt(lOption) : -1;
+            if (!isLoop) { // if -l option is not set then enforce to loop once
+                isLoop = true;
+                loopCount = 1;
+            }
             String pushValues[] = isPushOnOpen ? cmd.getOptionValues(OPTION_PUSH_ON_OPEN) : null;
             if (isPushOnOpen) {
                 Path path = FileSystems.getDefault().getPath(pushValues[2]);
