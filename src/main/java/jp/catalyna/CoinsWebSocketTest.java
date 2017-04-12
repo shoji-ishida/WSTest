@@ -71,11 +71,15 @@ public class CoinsWebSocketTest {
     private static final AtomicInteger display_count = new AtomicInteger(0);
     private static final AtomicInteger click_count = new AtomicInteger(0);
 
+    private static final AtomicInteger display_sent = new AtomicInteger(0);
+    private static final AtomicInteger click_sent = new AtomicInteger(0);
+
 
     private static final Object lock = new Object();
     private static final Object concurrencyLock = new Object();
 
     private static long startTime = 0;
+    private static long msgStartTime = 0;
 
     public static void main(String[] args) throws IOException, ExecutionException, InterruptedException, MalformedObjectNameException, NotCompliantMBeanException, InstanceAlreadyExistsException, MBeanRegistrationException {
         // enable trace log for netty and asynchhttpclient
@@ -200,7 +204,7 @@ public class CoinsWebSocketTest {
                                                 }
                                             }
                                             if (sessionCount == requests) {
-                                                log.log(Level.INFO, requests + " sessions(s) established. Ready to push");
+                                                log.log(Level.INFO, requests + " session(s) established. Ready to push");
                                                 if (isPushOnOpen) {
                                                     log.log(Level.INFO, "Requesting push");
                                                     log.log(Level.INFO, "url=" + pushValues[0] + ", token=" + pushValues[1] + ", json=" + pushValues[2]);
@@ -255,20 +259,20 @@ public class CoinsWebSocketTest {
                                             //log.log(Level.INFO, message);
                                             int count = push_count.incrementAndGet();
                                             counter.putPushCount(count);
-                                            if (count == 0) {
-                                                startTime = System.currentTimeMillis();
+                                            if (count == 1) {
+                                                msgStartTime = System.currentTimeMillis();
                                             }
-                                            if (count == session_count.get()) {
+                                            if (count == requests) {
                                                 long endTime = System.currentTimeMillis();
-                                                String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
+                                                String duration = DurationFormatUtils.formatPeriod(msgStartTime, endTime, TIME_FORMAT);
                                                 log.log(Level.INFO, count + " push(es) received. (" + duration + ")");
                                                 push_count.set(0);
-                                                if (isCloseOnMessage) {
-                                                    try {
-                                                        ws.close();
-                                                    } catch (IOException e) {
-                                                        e.printStackTrace();
-                                                    }
+                                            }
+                                            if (isCloseOnMessage) {
+                                                try {
+                                                    ws.close();
+                                                } catch (IOException e) {
+                                                    e.printStackTrace();
                                                 }
                                             }
                                         }
