@@ -239,7 +239,7 @@ public class CoinsWebSocketTest {
                                         @Override
                                         public void onMessage(String message) {
                                             // respond with display/click message
-                                            if (isSendClick && isSendDisplay) {
+                                            if (isSendClick || isSendDisplay) {
                                                 String messageId = parseMessageId(message);
                                                 // display
                                                 if (isSendDisplay) {
