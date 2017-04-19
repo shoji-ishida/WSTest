@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
@@ -73,6 +74,8 @@ public class CoinsWebSocketTest {
 
     private static final AtomicInteger display_sent = new AtomicInteger(0);
     private static final AtomicInteger click_sent = new AtomicInteger(0);
+
+    private static final AtomicLong totalTime = new AtomicLong(0);
 
 
     private static final Object lock = new Object();
@@ -199,12 +202,13 @@ public class CoinsWebSocketTest {
                                                 long endTime = System.currentTimeMillis();
                                                 String duration = DurationFormatUtils.formatPeriod(startTime, endTime, TIME_FORMAT);
                                                 log.log(Level.INFO, "Completed " + sessionCount + " requests. (" + duration + ")");
+                                                totalTime.addAndGet(endTime - startTime);
                                                 synchronized (concurrencyLock) {
                                                     concurrencyLock.notify();
                                                 }
                                             }
                                             if (sessionCount == requests) {
-                                                log.log(Level.INFO, requests + " session(s) established. Ready to push");
+                                                log.log(Level.INFO, requests + " session(s) established. Ready to push (" + totalTime.get()+"ms)");
                                                 if (isPushOnOpen) {
                                                     log.log(Level.INFO, "Requesting push");
                                                     log.log(Level.INFO, "url=" + pushValues[0] + ", token=" + pushValues[1] + ", json=" + pushValues[2]);
